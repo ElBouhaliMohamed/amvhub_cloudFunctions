@@ -14,9 +14,6 @@ const ffprobe_static = require('ffprobe-static');
 ffmpeg.setFfmpegPath(ffmpeg_static)
 // ffmpeg.setFfprobePath(ffprobe_static);
 
-
-// const ThumbnailGenerator = require('video-thumbnail-generator').default;
-
 const runtimeOpts = {
   timeoutSeconds: 300,
   memory: '1GB'
@@ -28,44 +25,6 @@ const THUMB_MAX_WIDTH = 1280;
 
 // Thumbnail prefix added to file names.
 const THUMB_PREFIX = 'thumb_';
-
-// Makes an ffmpeg command return a promise.
-function promisifyCommand(command) {
-  return new Promise((resolve, reject) => {
-    command
-      .on('filenames', (filenames) => {
-        console.log('Will generate ' + filenames.join(', '))
-      })
-      .on('end', resolve)
-      .on('error', reject).run();
-  });
-}
-
-function promisify(command) {
-  return new Promise((resolve, reject) => {
-    return command.then(resolve);
-  });
-}
-
-// function getVideoInfo(inputPath) {
-//   return new Promise((resolve, reject) => {
-//     console.log(inputPath);
-//     return ffmpeg.ffprobe(inputPath, (error, videoInfo) => {
-//       if (error) {
-//         return reject(error);
-//       }
-
-//       const { duration, size } = videoInfo.format;
-
-//       return resolve({
-//         size,
-//         durationInSeconds: Math.floor(duration),
-//         numberOfFrames: Math.floor(videoInfo.streams[0].avg_frame_rate)
-//       });
-//     });
-//   });
-// }
-
 
 exports.generateThumbnail = functions.runWith(runtimeOpts).storage.object().onFinalize(async (object) => {
   console.log(process.env.FIREBASE_CONFIG);
@@ -82,13 +41,18 @@ exports.generateThumbnail = functions.runWith(runtimeOpts).storage.object().onFi
     return console.log('This is not a video.');
   }
 
+  // Add thumbnail to database
+  await admin.firestore().collection('thumbnails').doc(fileName).set({
+    setProcessed: false
+  });
+
   // Cloud Storage files.
   const bucket = admin.storage().bucket(object.bucket);
   const file = bucket.file(filePath);
   const metadata = {
     contentType: 'image/png',
     // To enable Client-side caching you can set the Cache-Control headers here. Uncomment below.
-    // 'Cache-Control': 'public,max-age=3600',
+    'Cache-Control': 'public,max-age=3600'
   };
   
   // Download file from bucket.
@@ -126,38 +90,48 @@ exports.generateThumbnail = functions.runWith(runtimeOpts).storage.object().onFi
   });
   
   console.log('Thumbnails created at ' + tempLocalThumbFolder + ' and will be uploaded to ' + thumbsFolder);
-  // let isFile = await fs.lstatSync(tempLocalThumbFile).isFile(); 
-  // if(isFile) {
-  //   console.log(`${tempLocalThumbFile} is a File!`);
-  // }else {
-  //   console.log(`${tempLocalThumbFile} is not a File!`);
-  // }
 
   // Uploading the Thumbnail.
-  await bucket.upload(tempLocalThumb1File, {destination: thumb1FilePath});
-  await bucket.upload(tempLocalThumb2File, {destination: thumb2FilePath});
-  await bucket.upload(tempLocalThumb3File, {destination: thumb3FilePath});
+  await bucket.upload(tempLocalThumb1File, {destination: thumb1FilePath, metadata: metadata});
+  await bucket.upload(tempLocalThumb2File, {destination: thumb2FilePath, metadata: metadata});
+  await bucket.upload(tempLocalThumb3File, {destination: thumb3FilePath, metadata: metadata});
   console.log('Thumbnails uploaded to Storage at', thumbsFolder);
   // Once the image has been uploaded delete the local files to free up disk space.
   fs.unlinkSync(tempLocalFile);
   fs.unlinkSync(tempLocalThumb1File);
   fs.unlinkSync(tempLocalThumb2File);
   fs.unlinkSync(tempLocalThumb3File);
+
   // Get the Signed URLs for the thumbnail and original image.
-  // const config = {
-  //   action: 'read',
-  //   expires: '03-01-2500',
-  // };
-  // const results = await Promise.all([
-  //   thumbFile.getSignedUrl(config),
-  //   file.getSignedUrl(config),
-  // ]);
-  // console.log('Got Signed URLs.');
-  // const thumbResult = results[0];
-  // const originalResult = results[1];
-  // const thumbFileUrl = thumbResult[0];
-  // const fileUrl = originalResult[0];
+  const config = {
+    action: 'read',
+    expires: '03-17-2025'
+  };
+  const results = await Promise.all([
+    thumbFile1.getSignedUrl(config),
+    thumbFile2.getSignedUrl(config),
+    thumbFile3.getSignedUrl(config),
+    file.getSignedUrl(config),
+  ]);
+
+  console.log('Got Signed URLs.');
+  const thumbResult1 = results[0];
+  const thumbResult2 = results[1];
+  const thumbResult3 = results[2];
+
+  const thumbFileUrl1 = thumbResult1[0];
+  const thumbFileUrl2 = thumbResult2[0];
+  const thumbFileUrl3 = thumbResult3[0];
+
+  const originalResult = results[3];
+  const fileUrl = originalResult[0];
+
   // Add the URLs to the Database
-  // await admin.database().ref('images').push({path: fileUrl, thumbnail: thumbFileUrl});
+  await admin.firestore().collection('thumbnails').doc(fileName).set({
+      isProcessed: true,
+      path: fileUrl, 
+      thumbnails: [thumbFileUrl1, thumbFileUrl2, thumbFileUrl3]
+  })
+
   return console.log('Thumbnail URLs saved to database.');
 });
