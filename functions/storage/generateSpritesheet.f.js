@@ -7,16 +7,13 @@ const fs = require('fs');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpeg_static = require('ffmpeg-static');
 const ffprobe_static = require('ffprobe-static');
-const spawn = require('child-process-promise').spawn;
+const gm = require('gm').subClass({imageMagick: true});
 
 ffmpeg.setFfmpegPath(ffmpeg_static)
 ffmpeg.setFfprobePath(ffprobe_static.path)
 
-const SPRITE_MAX_HEIGHT = 120;
-const SPRITE_COLS = 10;
-const SPRITE_ROWS = 10;
-const SPRITE_EVERY_NTH_SECOND = 5;
 const SPRITE_PREFIX = 'sprite_';
+const PREVIEW_PREFIX = 'preview_';
 
 const runtimeOpts = {
     timeoutSeconds: 540,
@@ -68,6 +65,10 @@ exports = module.exports = functions.runWith(runtimeOpts).storage.object().onFin
     return console.log('This is not a video.');
   }
 
+  if(fileName.startsWith(PREVIEW_PREFIX)) {
+    return console.log('This is already a preview.')
+}
+
   // Cloud Storage files.
   const bucket = admin.storage().bucket(object.bucket);
   const file = bucket.file(filePath);
@@ -87,12 +88,20 @@ exports = module.exports = functions.runWith(runtimeOpts).storage.object().onFin
 
   console.log(`Path to ffmpeg ${ffmpeg_static}`)
 
-  const { framesPerSecond } = await getVideoInfo(tempLocalFile);
+  const { framesPerSecond, durationInSeconds } = await getVideoInfo(tempLocalFile);
+
+  const SPRITE_EVERY_NTH_SECOND = 5;
+  const SPRITE_EVERY_NTH_FRAME = framesPerSecond * SPRITE_EVERY_NTH_SECOND;
+  const SPRITE_HEIGHT = 120;
+  const SPRITE_COLS = 10;
+  const SPRITE_ROWS = Math.round((durationInSeconds / SPRITE_EVERY_NTH_SECOND) / SPRITE_COLS);
+
+  console.log(`Taking a frame every ${SPRITE_EVERY_NTH_SECOND} with ${SPRITE_COLS}x${SPRITE_ROWS}`)
 
   await new Promise((resolve, reject) => {
     ffmpeg()
       .input(tempLocalFile)
-      .outputOptions(['-frames 1','-q:v 1',`-filter:v select=not(mod(n\\,40)),scale=-1:120,tile=10x10`]) // every 5 seconds
+      .outputOptions(['-frames 1','-q:v 1',`-filter:v fps=1/${SPRITE_EVERY_NTH_SECOND},scale=-1:${SPRITE_HEIGHT},tile=${SPRITE_COLS}x${SPRITE_ROWS}`]) // every second
       .output(path.join(tempLocalSpriteSheetFolder, `${SPRITE_PREFIX}${fileName}.png`))
       .on('start', (commandLine) => {
         console.log('Spawned Ffmpeg with command: ' + commandLine);
@@ -106,8 +115,20 @@ exports = module.exports = functions.runWith(runtimeOpts).storage.object().onFin
   });
 
   // console.log('Taking all jpgs and creating the sheet')
-
+  let spriteSheetWidth = 0;
   // Generate a thumbnail using ImageMagick.
+  await new Promise((resolve, reject) => {
+    gm(path.join(tempLocalSpriteSheetFolder, `${SPRITE_PREFIX}${fileName}.png`))
+    .size((err, value) => {
+      if(err) reject(err)
+
+      spriteSheetWidth = value.width
+      resolve()
+    });
+  })
+  
+  const SPRITE_WIDTH = spriteSheetWidth / SPRITE_COLS
+
   // await spawn('identify',[path.join(tempLocalSpriteSheetFolder, `${SPRITE_PREFIX}${fileName}.png`)], {capture: ['stdout', 'stderr']});
 
   const spriteSheetFolder = path.normalize(path.join('spritesheets', fileName));
@@ -118,11 +139,32 @@ exports = module.exports = functions.runWith(runtimeOpts).storage.object().onFin
   console.log('Spritesheet created at ' + tempLocalSpriteSheetFolder + ' and will be uploaded to ' + spriteSheetFolder);
 
   // Uploading the Thumbnail.
-  await bucket.upload(localSpriteSheetFile, {destination: spriteSheetFile, metadata: metadata});
+  await bucket.upload(localSpriteSheetFile, {destination: spriteSheetFile, resumable: false, metadata: metadata});
   console.log('Spritesheet uploaded to Storage at', spriteSheetFolder);
   // Once the image has been uploaded delete the local files to free up disk space.
   fs.unlinkSync(tempLocalFile);
   fs.unlinkSync(localSpriteSheetFile);
+  
+  // Get the Signed URLs for the thumbnail and original image.
+  const config = {
+    action: 'read',
+    expires: '03-17-2025'
+  };
 
-  return console.log('Done creating Spritesheet');
+  const results = await Promise.all([
+    spriteSheetFile.getSignedUrl(config),
+  ]);
+
+  console.log('Got Signed URLs.');
+  const spriteSheetResult = results[0];
+  const spriteSheetFileUrl = spriteSheetResult[0];
+
+  // Add the URLs to the Database
+  await admin.firestore().collection('videos').doc(fileName).update({
+      spriteSheet: spriteSheetFileUrl,
+      spriteWidth: SPRITE_WIDTH,
+      spriteHeight: SPRITE_HEIGHT
+  })
+
+  return console.log('Done creating Spritesheet and saving it to the database');
 });

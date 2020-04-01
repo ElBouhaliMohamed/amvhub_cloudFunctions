@@ -55,7 +55,7 @@ exports = module.exports = functions.runWith(runtimeOpts).storage.object().onFin
   const tempLocalPreviewFolder = os.tmpdir();
   const tempLocalPreviewFile = path.join(tempLocalPreviewFolder,`${PREVIEW_PREFIX}${fileNameWithType.replace(/ /g, "_")}`);
 
-  const startTimeInSeconds = 0
+  const startTimeInSeconds = 20
   const fragmentDurationInSeconds = 10
 
   console.log(`Path to ffmpeg ${ffmpeg_static}`)
@@ -64,7 +64,6 @@ exports = module.exports = functions.runWith(runtimeOpts).storage.object().onFin
         .input(tempLocalFile)
         .inputOptions([`-ss ${startTimeInSeconds}`])
         .outputOptions([`-t ${fragmentDurationInSeconds}`])
-        .noAudio()
         .output(tempLocalPreviewFile)
         .on('end', resolve)
         .on('error', reject)
@@ -83,11 +82,30 @@ exports = module.exports = functions.runWith(runtimeOpts).storage.object().onFin
   console.log('Preview created at ' + tempLocalPreviewFolder + ' and will be uploaded to ' + previewsFolder);
 
   // Uploading the Thumbnail.
-  await bucket.upload(tempLocalPreviewFile, {destination: previewFilePath, metadata: metadata});
+  await bucket.upload(tempLocalPreviewFile, {destination: previewFilePath, resumable: false, metadata: metadata});
   console.log('Preview uploaded to Storage at', previewsFolder);
   // Once the image has been uploaded delete the local files to free up disk space.
   fs.unlinkSync(tempLocalFile);
   fs.unlinkSync(tempLocalPreviewFile);
+
+  
+  // Get the Signed URLs for the thumbnail and original image.
+  const config = {
+    action: 'read',
+    expires: '03-17-2025'
+  };
+  const results = await Promise.all([
+    previewFile.getSignedUrl(config),
+  ]);
+
+  console.log('Got Signed URLs.');
+  const previewFileResult = results[0];
+  const previewFileUrl = previewFileResult[0];
+
+  // Add the URLs to the Database
+  await admin.firestore().collection('videos').doc(fileName).update({
+      preview: previewFileUrl
+  })
 
   return console.log('Preview successfully created');
 });

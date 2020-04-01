@@ -15,6 +15,8 @@ const THUMB_MAX_WIDTH = 1280;
 
 // Thumbnail prefix added to file names.
 const THUMB_PREFIX = 'thumb_';
+const PREVIEW_PREFIX = 'preview_';
+
 
 const runtimeOpts = {
     timeoutSeconds: 300,
@@ -36,6 +38,11 @@ exports = module.exports = functions.runWith(runtimeOpts).storage.object().onFin
     return console.log('This is not a video.');
   }
 
+  if(fileName.startsWith(PREVIEW_PREFIX)) {
+    return console.log('This is a preview so no thumbnail needed.')
+}
+
+
   // Add thumbnail to database
   await admin.firestore().collection('thumbnails').doc(fileName).set({
     setProcessed: false
@@ -48,6 +55,7 @@ exports = module.exports = functions.runWith(runtimeOpts).storage.object().onFin
     contentType: 'image/png',
     // To enable Client-side caching you can set the Cache-Control headers here. Uncomment below.
     'Cache-Control': 'public,max-age=3600'
+
   };
   
   // Download file from bucket.
@@ -87,9 +95,9 @@ exports = module.exports = functions.runWith(runtimeOpts).storage.object().onFin
   console.log('Thumbnails created at ' + tempLocalThumbFolder + ' and will be uploaded to ' + thumbsFolder);
 
   // Uploading the Thumbnail.
-  await bucket.upload(tempLocalThumb1File, {destination: thumb1FilePath, metadata: metadata});
-  await bucket.upload(tempLocalThumb2File, {destination: thumb2FilePath, metadata: metadata});
-  await bucket.upload(tempLocalThumb3File, {destination: thumb3FilePath, metadata: metadata});
+  await bucket.upload(tempLocalThumb1File, {destination: thumb1FilePath, resumable: false, metadata: metadata});
+  await bucket.upload(tempLocalThumb2File, {destination: thumb2FilePath, resumable: false, metadata: metadata});
+  await bucket.upload(tempLocalThumb3File, {destination: thumb3FilePath, resumable: false, metadata: metadata});
   console.log('Thumbnails uploaded to Storage at', thumbsFolder);
   // Once the image has been uploaded delete the local files to free up disk space.
   fs.unlinkSync(tempLocalFile);
