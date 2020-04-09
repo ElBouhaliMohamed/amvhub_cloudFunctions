@@ -6,6 +6,7 @@ const os = require('os');
 const fs = require('fs');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpeg_static = require('ffmpeg-static');
+const uuidv4 = require('uuid/v4')
 
 ffmpeg.setFfmpegPath(ffmpeg_static)
 
@@ -39,12 +40,16 @@ exports = module.exports = functions.runWith(runtimeOpts).storage.object().onFin
   }
 
   // Cloud Storage files.
+  const uuid = uuidv4();
   const bucket = admin.storage().bucket(object.bucket);
   const file = bucket.file(filePath);
   const metadata = {
     contentType,
     // To enable Client-side caching you can set the Cache-Control headers here. Uncomment below.
-    'Cache-Control': 'public,max-age=3600'
+    'Cache-Control': 'public,max-age=3600',
+    metadata: {
+      firebaseStorageDownloadTokens: uuid
+    }
   };
   
   // Download file from bucket.
@@ -87,20 +92,11 @@ exports = module.exports = functions.runWith(runtimeOpts).storage.object().onFin
   // Once the image has been uploaded delete the local files to free up disk space.
   fs.unlinkSync(tempLocalFile);
   fs.unlinkSync(tempLocalPreviewFile);
-
   
-  // Get the Signed URLs for the thumbnail and original image.
-  const config = {
-    action: 'read',
-    expires: '03-17-2025'
-  };
-  const results = await Promise.all([
-    previewFile.getSignedUrl(config),
-  ]);
-
-  console.log('Got Signed URLs.');
-  const previewFileResult = results[0];
-  const previewFileUrl = previewFileResult[0];
+  // Get the URLs for the thumbnail and original image.
+  const bucketName = 'amvhub-83826.appspot.com'
+  const encodedPath = encodeURIComponent(previewFilePath)
+  const previewFileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedPath}?alt=media&token=${uuid}`
 
   // Add the URLs to the Database
   await admin.firestore().collection('videos').doc(fileName).update({

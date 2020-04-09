@@ -14,6 +14,7 @@ try {admin.initializeApp();} catch(e) { console.log('Admin already initialized')
 
 exports = module.exports = functions.https.onCall(async (data, context) => {
     // get all users we follow
+    console.log(data)
     let followsSnapshot = await admin.firestore().collection('users').doc(data.uid).collection('follows').get()
     console.log('Retrieved users follows')
     // query the videos for each user
@@ -54,20 +55,19 @@ exports = module.exports = functions.https.onCall(async (data, context) => {
 });
 
 const getVideosByUser = async (uid) => {
-    const lastWeek = new Date()
-    var pastDate = lastWeek.getDate() - 7
-    lastWeek.setDate(pastDate)
-    const limitDate = admin.firestore.Timestamp.fromDate(lastWeek)
+    const lastMonth = new Date()
+    var pastDate = lastMonth.getDate() - 31
+    lastMonth.setDate(pastDate)
+    const limitDate = admin.firestore.Timestamp.fromDate(lastMonth)
     console.log(`fetching videos for ${uid}`)
-    console.log(`createdAt > ${lastWeek}`)
+    console.log(`createdAt > ${lastMonth}`)
     console.log(`user == /users/${uid}`)
     var userRef = admin.firestore().collection('users').doc(uid)
-    let videosSnapshot = await admin.firestore().collection('videos')
-                                    .where("user", "==", userRef)
-                                    .where("createdAt", ">", limitDate) // date needs to be bigger or equal than last week
-                                    .get()
 
-                                    
+    let videosSnapshot = await admin.firestore().collection('videos')
+    .where("user", "==", userRef)
+    .where("createdAt", ">=", limitDate) // date needs to be bigger or equal than last month
+    .get()
 
     let videos = []
     for( video of videosSnapshot.docs) {

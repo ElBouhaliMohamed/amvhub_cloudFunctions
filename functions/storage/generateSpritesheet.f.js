@@ -8,6 +8,7 @@ const ffmpeg = require('fluent-ffmpeg');
 const ffmpeg_static = require('ffmpeg-static');
 const ffprobe_static = require('ffprobe-static');
 const gm = require('gm').subClass({imageMagick: true});
+const uuidv4 = require('uuid/v4')
 
 ffmpeg.setFfmpegPath(ffmpeg_static)
 ffmpeg.setFfprobePath(ffprobe_static.path)
@@ -70,12 +71,16 @@ exports = module.exports = functions.runWith(runtimeOpts).storage.object().onFin
 }
 
   // Cloud Storage files.
+  const uuid = uuidv4();
   const bucket = admin.storage().bucket(object.bucket);
   const file = bucket.file(filePath);
   const metadata = {
     contentType: 'image/png',
     // To enable Client-side caching you can set the Cache-Control headers here. Uncomment below.
-    'Cache-Control': 'public,max-age=3600'
+    'Cache-Control': 'public,max-age=3600',
+    metadata: {
+      firebaseStorageDownloadTokens: uuid
+    }
   };
   
   // Download file from bucket.
@@ -145,19 +150,9 @@ exports = module.exports = functions.runWith(runtimeOpts).storage.object().onFin
   fs.unlinkSync(tempLocalFile);
   fs.unlinkSync(localSpriteSheetFile);
   
-  // Get the Signed URLs for the thumbnail and original image.
-  const config = {
-    action: 'read',
-    expires: '03-17-2025'
-  };
-
-  const results = await Promise.all([
-    spriteSheetFile.getSignedUrl(config),
-  ]);
-
-  console.log('Got Signed URLs.');
-  const spriteSheetResult = results[0];
-  const spriteSheetFileUrl = spriteSheetResult[0];
+  const bucketName = 'amvhub-83826.appspot.com'
+  const encodedPath = encodeURIComponent(spriteSheetFilePath)
+  const spriteSheetFileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedPath}?alt=media&token=${uuid}`
 
   // Add the URLs to the Database
   await admin.firestore().collection('videos').doc(fileName).update({

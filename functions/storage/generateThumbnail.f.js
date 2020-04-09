@@ -6,6 +6,7 @@ const os = require('os');
 const fs = require('fs');
 const ffmpeg = require('fluent-ffmpeg');
 const ffmpeg_static = require('ffmpeg-static');
+const uuidv4 = require('uuid/v4')
 
 ffmpeg.setFfmpegPath(ffmpeg_static)
 
@@ -49,13 +50,16 @@ exports = module.exports = functions.runWith(runtimeOpts).storage.object().onFin
   });
 
   // Cloud Storage files.
+  const uuid = uuidv4();
   const bucket = admin.storage().bucket(object.bucket);
   const file = bucket.file(filePath);
   const metadata = {
     contentType: 'image/png',
     // To enable Client-side caching you can set the Cache-Control headers here. Uncomment below.
-    'Cache-Control': 'public,max-age=3600'
-
+    'Cache-Control': 'public,max-age=3600',
+    metadata: {
+      firebaseStorageDownloadTokens: uuid
+    }
   };
   
   // Download file from bucket.
@@ -105,29 +109,10 @@ exports = module.exports = functions.runWith(runtimeOpts).storage.object().onFin
   fs.unlinkSync(tempLocalThumb2File);
   fs.unlinkSync(tempLocalThumb3File);
 
-  // Get the Signed URLs for the thumbnail and original image.
-  const config = {
-    action: 'read',
-    expires: '03-17-2025'
-  };
-  const results = await Promise.all([
-    thumbFile1.getSignedUrl(config),
-    thumbFile2.getSignedUrl(config),
-    thumbFile3.getSignedUrl(config),
-    file.getSignedUrl(config),
-  ]);
-
-  console.log('Got Signed URLs.');
-  const thumbResult1 = results[0];
-  const thumbResult2 = results[1];
-  const thumbResult3 = results[2];
-
-  const thumbFileUrl1 = thumbResult1[0];
-  const thumbFileUrl2 = thumbResult2[0];
-  const thumbFileUrl3 = thumbResult3[0];
-
-  const originalResult = results[3];
-  const fileUrl = originalResult[0];
+  const bucketName = 'amvhub-83826.appspot.com'
+  const thumbFileUrl1 = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(thumb1FilePath)}?alt=media&token=${uuid}`
+  const thumbFileUrl2 = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(thumb2FilePath)}?alt=media&token=${uuid}`
+  const thumbFileUrl3 = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(thumb3FilePath)}?alt=media&token=${uuid}`
 
   // Add the URLs to the Database
   await admin.firestore().collection('thumbnails').doc(fileName).set({
