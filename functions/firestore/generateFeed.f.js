@@ -4,7 +4,7 @@ try {admin.initializeApp();} catch(e) { console.log('Admin already initialized')
 
 /*
     data : {
-        uid / so access to subcollection is users/uid/feed
+        uuid / so access to subcollection is users/uuid/feed
     }
     create follows subcollection if not existing yet
     create timeline subcollection if not existing yet
@@ -15,14 +15,14 @@ try {admin.initializeApp();} catch(e) { console.log('Admin already initialized')
 exports = module.exports = functions.https.onCall(async (data, context) => {
     // get all users we follow
     console.log(data)
-    let followsSnapshot = await admin.firestore().collection('users').doc(data.uid).collection('follows').get()
+    let followsSnapshot = await admin.firestore().collection('users').doc(data.uuid).collection('follows').get()
     console.log('Retrieved users follows')
     // query the videos for each user
     let fetchVideosPromises = []
     for( user of followsSnapshot.docs) {
         let userData = user.data()
         console.log(userData)
-        fetchVideosPromises.push(getVideosByUser(userData.uid))
+        fetchVideosPromises.push(getVideosByUser(userData.uuid))
     }
     let fetchedVideos = await Promise.all(fetchVideosPromises)
 
@@ -35,7 +35,7 @@ exports = module.exports = functions.https.onCall(async (data, context) => {
 
     // clear the current feed in firestore
     console.log('Clear current feed')
-    let feedSnapshot = await admin.firestore().collection('users').doc(data.uid).collection('feed').get()
+    let feedSnapshot = await admin.firestore().collection('users').doc(data.uuid).collection('feed').get()
     for ( video of feedSnapshot.docs) {
         video.ref.delete()
     }
@@ -45,7 +45,7 @@ exports = module.exports = functions.https.onCall(async (data, context) => {
     console.log(feed)
     let batch = admin.firestore().batch()
     for( video of feed ) {
-        let entry = admin.firestore().collection('users').doc(data.uid).collection('feed').doc()
+        let entry = admin.firestore().collection('users').doc(data.uuid).collection('feed').doc()
         batch.set(entry, video)
     }
     let result = await batch.commit()
@@ -54,15 +54,15 @@ exports = module.exports = functions.https.onCall(async (data, context) => {
     return result;
 });
 
-const getVideosByUser = async (uid) => {
+const getVideosByUser = async (uuid) => {
     const lastMonth = new Date()
     var pastDate = lastMonth.getDate() - 31
     lastMonth.setDate(pastDate)
     const limitDate = admin.firestore.Timestamp.fromDate(lastMonth)
-    console.log(`fetching videos for ${uid}`)
+    console.log(`fetching videos for ${uuid}`)
     console.log(`createdAt > ${lastMonth}`)
-    console.log(`user == /users/${uid}`)
-    var userRef = admin.firestore().collection('users').doc(uid)
+    console.log(`user == /users/${uuid}`)
+    var userRef = admin.firestore().collection('users').doc(uuid)
 
     let videosSnapshot = await admin.firestore().collection('videos')
     .where("user", "==", userRef)
@@ -73,12 +73,13 @@ const getVideosByUser = async (uid) => {
     for( video of videosSnapshot.docs) {
         let videoData = video.data()
         videos.push({
-            editor: videoData.editor,
+            editors: videoData.editors,
             title: videoData.title,
             uuid: videoData.uuid,
             views: videoData.views,
             user: videoData.user,
-            createdAt: videoData.createdAt
+            description: videoData.description,
+            createdAt: videoData.createdAt,
         })
     }
 
