@@ -40,23 +40,22 @@ exports = module.exports = functions
     const filePath = object.name;
     const contentType = object.contentType; // This is the file MIME type
     const fileName = path.parse(filePath).name;
-    const workingDir = path.join(os.tmpdir(), 'thumbs');
+    const workingDir = path.join(os.tmpdir(), 'convertImage');
     const tempLocalFile = path.join(
       workingDir,
       path.basename(filePath).replace(/ /g, '_')
     );
-    
     if (!fs.existsSync(workingDir)) {
       fs.mkdirSync(workingDir);
     }
 
     // Exit if this is triggered on a file that is not a video.
-    if (!contentType.startsWith('video/')) {
-      return console.log('This is not a video.');
+    if (contentType.startsWith('video/')) {
+      return console.log('This is not an image.');
     }
 
-    if (fileName.startsWith(PREVIEW_PREFIX)) {
-      return console.log('This is a preview so no thumbnail needed.');
+    if (contentType.endsWith(`/${FILETYPE}`)) {
+      return console.log('Already ' + FILETYPE);
     }
 
     // Add thumbnail to database
@@ -118,14 +117,6 @@ exports = module.exports = functions
           size: `${THUMB_MAX_WIDTH}x${THUMB_MAX_HEIGHT}`,
         });
     });
-
-    // convert to filetype if png is not wanted (maybe webp or avif)
-    // if(FILETYPE !== 'png') {
-    //   console.log('Converting pngs to ' + FILETYPE)
-    //   convertImage(tempLocalThumb1File + 'png', tempLocalThumb1File + `${FILETYPE}`)
-    //   convertImage(tempLocalThumb2File + 'png', tempLocalThumb2File + `${FILETYPE}`)
-    //   convertImage(tempLocalThumb3File + 'png', tempLocalThumb3File + `${FILETYPE}`)
-    // }
 
     // update local path
     tempLocalThumb1File = tempLocalThumb1File + `${FILETYPE}`;
@@ -191,7 +182,6 @@ exports = module.exports = functions
     console.log('Thumbnails uploaded to Storage at', thumbsFolder);
     // Once the image has been uploaded delete the local files to free up disk space.
 
-    console.log('Unlink files');
     fs.unlinkSync(tempLocalFile);
     fs.unlinkSync(tempLocalThumb1File);
     fs.unlinkSync(tempLocalThumb2File);
